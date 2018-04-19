@@ -108,6 +108,7 @@ public class Constants {
     String FILTER = "filter";
     String QUALITY = "quality";
     String SRC = "src";
+    String SOURCE = "source";
     String PLACE_HOLDER = "placeHolder";
     String RESIZE_MODE = "resizeMode";
     String AUTO_RECYCLE = "autoBitmapRecycle";
@@ -123,6 +124,8 @@ public class Constants {
     String COLUMN_WIDTH= "columnWidth";
     String COLUMN_COUNT= "columnCount";
     String COLUMN_GAP= "columnGap";
+    String LEFT_GAP= "leftGap";
+    String RIGHT_GAP= "rightGap";
     String SHOW_SCROLLBAR= "showScrollbar";
     String OVERFLOW = "overflow";
     String TYPE = "type";
@@ -201,9 +204,13 @@ public class Constants {
     String STRATEGY  = "strategy";
 
     String ALLOW_COPY_PASTE = "allowCopyPaste";
+    String INCLUDE_FONT_PADDING = "includeFontPadding";
+    String ENABLE_COPY = "enableCopy";
 
-
-
+    String THUMB_TINT_COLOR = "thumbTintColor";
+    String ON_THUMB_TINT_COLOR = "onThumbTintColor";
+    String TINT_COLOR = "tintColor";
+    String ON_TINT_COLOR = "onTintColor";
 
     interface  Recycler{
       String LIST_DATA = "listData";
@@ -322,11 +329,8 @@ public class Constants {
       String DESTORY = "destroy";
     }
 
-
-    String SHOULD_STOP_PROPAGATION = "shouldStopPropagation";
-
-
-
+    String STOP_PROPAGATION = "stopPropagation";
+    String ONMESSAGE = "message";
   }
 
   public interface PSEUDO {

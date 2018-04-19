@@ -33,6 +33,22 @@
 #import "WXSDKManager.h"
 #import "WXComponent+DataBinding.h"
 
+@interface WXRecycleListComponentView:UICollectionView
+@end
+
+@implementation WXRecycleListComponentView
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch
+{
+    if ([(id <WXScrollerProtocol>) self.wx_component respondsToSelector:@selector(requestGestureShouldStopPropagation:shouldReceiveTouch:)]) {
+        return [(id <WXScrollerProtocol>) self.wx_component requestGestureShouldStopPropagation:gestureRecognizer shouldReceiveTouch:touch];
+    }
+    else{
+        return YES;
+    }
+}
+
+@end
+
 @interface WXRecycleListComponent () <WXRecycleListLayoutDelegate, WXRecycleListUpdateDelegate, UICollectionViewDelegateFlowLayout, UICollectionViewDataSource>
 
 @end
@@ -87,7 +103,7 @@ WX_EXPORT_METHOD(@selector(setListData:))
 - (UIView *)loadView
 {
     WXRecycleListLayout *layout = [self recycleListLayout];
-    return [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
+    return [[WXRecycleListComponentView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
 }
 
 - (void)viewDidLoad
@@ -417,7 +433,7 @@ WX_EXPORT_METHOD(@selector(setListData:))
     });
 #ifdef DEBUG
     double duration = -[startTime timeIntervalSinceNow] * 1000;
-    WXLogDebug(@"cell:%zi update data time:%f", indexPath.item, duration);
+    WXLogDebug(@"cell:%li update data time:%f", (long)indexPath.item, duration);
 #endif
     
     NSValue *cachedSize = _sizeCache[indexPath];

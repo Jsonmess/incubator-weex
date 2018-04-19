@@ -28,15 +28,21 @@
 #import "WXRefreshComponent.h"
 #import "WXConfigCenterProtocol.h"
 #import "WXSDKEngine.h"
+#import "WXComponent+Events.h"
 
-@interface WXScrollerComponnetView:UIScrollView
+@interface WXScrollerComponentView:UIScrollView
 @end
 
-@implementation WXScrollerComponnetView
-@end
-
-@interface WXScrollerComponnetView(WXScrollerComponnetView_ContentInsetAdjustmentBehavior)
-@property(nonatomic, assign)NSUInteger contentInsetAdjustmentBehavior;
+@implementation WXScrollerComponentView
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch
+{
+    if ([(id <WXScrollerProtocol>) self.wx_component respondsToSelector:@selector(requestGestureShouldStopPropagation:shouldReceiveTouch:)]) {
+        return [(id <WXScrollerProtocol>) self.wx_component requestGestureShouldStopPropagation:gestureRecognizer shouldReceiveTouch:touch];
+    }
+    else{
+        return YES;
+    }
+}
 @end
 
 @interface WXScrollToTarget : NSObject
@@ -54,7 +60,7 @@
 @interface WXScrollerComponent()
 
 @property (nonatomic, strong) NSMutableArray *  stickyArray;
-@property (nonatomic, strong) NSMutableArray *  listenerArray;
+@property (nonatomic, strong) NSMutableArray * listenerArray;
 @property (nonatomic, weak) WXRefreshComponent *refreshComponent;
 @property (nonatomic, weak) WXLoadingComponent *loadingComponent;
 
@@ -76,6 +82,11 @@
     BOOL _scrollable;
     NSString * _alwaysScrollableVertical;
     NSString * _alwaysScrollableHorizontal;
+    BOOL _bounces;
+    
+    // refreshForAppear: load more when refresh component begin appear(if scroll is dragging or decelerating, should delay)
+    // refreshForWholeVisible: load more until the whole refresh component visible
+    NSString *_refreshType;
 
     // vertical & horizontal
     WXScrollDirection _scrollDirection;
@@ -136,6 +147,8 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
         if (attributes[@"alwaysScrollableHorizontal"]) {
             _alwaysScrollableHorizontal = [WXConvert NSString:attributes[@"alwaysScrollableHorizontal"]];
         }
+        _bounces = attributes[@"bounce"]?[WXConvert BOOL:attributes[@"bounce"]]:YES;
+        _refreshType = [WXConvert NSString:attributes[@"refreshType"]]?:@"refreshForWholeVisible";
         _pagingEnabled = attributes[@"pagingEnabled"] ? [WXConvert BOOL:attributes[@"pagingEnabled"]] : NO;
         _loadMoreOffset = attributes[@"loadmoreoffset"] ? [WXConvert WXPixelType:attributes[@"loadmoreoffset"] scaleFactor:self.weexInstance.pixelScaleFactor] : 0;
         _loadmoreretry = attributes[@"loadmoreretry"] ? [WXConvert NSUInteger:attributes[@"loadmoreretry"]] : 0;
@@ -167,14 +180,14 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
 
 - (UIView *)loadView
 {
-    return [[WXScrollerComponnetView alloc] init];
+    return [[WXScrollerComponentView alloc] init];
 }
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
     [self setContentSize:_contentSize];
-    WXScrollerComponnetView* scrollView = (WXScrollerComponnetView *)self.view;
+    WXScrollerComponentView* scrollView = (WXScrollerComponentView *)self.view;
     scrollView.delegate = self;
     scrollView.exclusiveTouch = YES;
     scrollView.autoresizesSubviews = NO;
@@ -183,18 +196,24 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
     scrollView.showsHorizontalScrollIndicator = _showScrollBar;
     scrollView.scrollEnabled = _scrollable;
     scrollView.pagingEnabled = _pagingEnabled;
+    
+    if (scrollView.bounces != _bounces) {
+        scrollView.bounces = _bounces;
+    }
+    
     if (_alwaysScrollableHorizontal) {
         scrollView.alwaysBounceHorizontal = [WXConvert BOOL:_alwaysScrollableHorizontal];
     }
     if (_alwaysScrollableVertical) {
         scrollView.alwaysBounceVertical = [WXConvert BOOL:_alwaysScrollableVertical];
     }
-    if (WX_SYS_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0")) {
-        // now use the runtime to forbid the contentInset being Adjusted.
-        // here we add a category for scoller component view class compatible for new API,
-        // as we are concerning about weexSDK build as framework by Xcode8, using in Xcode9 project,
-        // so the the macro __IPHONE_11_0 will be useless in this case.
-        scrollView.contentInsetAdjustmentBehavior = 2;
+    
+    if (@available(iOS 11.0, *)) {
+        if ([scrollView respondsToSelector:@selector(setContentInsetAdjustmentBehavior:)]) {
+            scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+        }
+    } else {
+        // Fallback on earlier versions
     }
     
     if (self.ancestorScroller) {
@@ -245,6 +264,10 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
     if (attributes[@"loadmoreoffset"]) {
         _loadMoreOffset = [WXConvert WXPixelType:attributes[@"loadmoreoffset"] scaleFactor:self.weexInstance.pixelScaleFactor];
     }
+    if (attributes[@"bounce"]) {
+        _bounces = [WXConvert BOOL:attributes[@"bounce"]];
+        ((UIScrollView *)self.view).bounces = _bounces;
+    }
     
     if (attributes[@"loadmoreretry"]) {
         NSUInteger loadmoreretry = [WXConvert NSUInteger:attributes[@"loadmoreretry"]];
@@ -266,6 +289,11 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
         _alwaysScrollableVertical = [WXConvert NSString:attributes[@"alwaysScrollableVertical"]];
         ((UIScrollView*)self.view).alwaysBounceVertical = [WXConvert BOOL:_alwaysScrollableVertical];
     }
+    
+    if (attributes[@"refreshType"]) {
+        _refreshType = [WXConvert NSString:attributes[@"refreshType"]];
+    }
+    
     if (attributes[@"offsetAccuracy"]) {
         _offsetAccuracy = [WXConvert WXPixelType:attributes[@"offsetAccuracy"] scaleFactor:self.weexInstance.pixelScaleFactor];
     }
@@ -385,7 +413,8 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
 - (void)addScrollToListener:(WXComponent *)target
 {
     BOOL has = NO;
-    for (WXScrollToTarget *targetData in self.listenerArray) {
+    NSMutableArray *listenerArray = [self.listenerArray copy];
+    for (WXScrollToTarget *targetData in listenerArray) {
         if (targetData.target == target) {
             has = YES;
             break;
@@ -403,7 +432,8 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
 {
     if (_shouldRemoveScrollerListener) {
         WXScrollToTarget *targetData = nil;
-        for (WXScrollToTarget *targetDataTemp in self.listenerArray) {
+        NSMutableArray *listenerArray = [self.listenerArray copy];
+        for (WXScrollToTarget *targetDataTemp in listenerArray) {
             if (targetDataTemp.target == target) {
                 targetData = targetDataTemp;
                 break;
@@ -536,9 +566,22 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
     return _scrollDirection;
 }
 
+- (NSString*)refreshType
+{
+    return _refreshType;
+}
+- (BOOL)requestGestureShouldStopPropagation:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch
+{
+    return [self gestureShouldStopPropagation:gestureRecognizer shouldReceiveTouch:touch];
+}
+
 #pragma mark UIScrollViewDelegate
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
+    if ([_refreshType isEqualToString:@"refreshForAppear"] && _refreshComponent) {
+        [_refreshComponent setIndicatorHidden:NO];
+    }
+    
     if (_scrollStartEvent) {
         CGFloat scaleFactor = self.weexInstance.pixelScaleFactor;
         NSDictionary *contentSizeData = @{@"width":[NSNumber numberWithFloat:scrollView.contentSize.width / scaleFactor],@"height":[NSNumber numberWithFloat:scrollView.contentSize.height / scaleFactor]};
@@ -643,14 +686,34 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
         }
     }
 }
+
+- (void)scrollViewWillEndDragging:(UIScrollView *)scrollView withVelocity:(CGPoint)velocity targetContentOffset:(inout CGPoint *)targetContentOffset
+{
+    if ([_refreshType isEqualToString:@"refreshForAppear"]) {
+        if(targetContentOffset == nil)
+            return;
+        CGPoint offset = *targetContentOffset;
+        if(velocity.y <= 0) {
+            // drop down
+            if( offset.y <= _refreshComponent.calculatedFrame.size.height ) {
+                [self loadMoreIfNeed];
+            }
+        } else if (velocity.y > 0) {
+            // drop up
+        }
+    }
+}
+
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
 {
     [_loadingComponent.view setHidden:NO];
     [_refreshComponent.view setHidden:NO];
     
     //refresh
-    if (_refreshComponent && scrollView.contentOffset.y < 0 && scrollView.contentOffset.y + _refreshComponent.calculatedFrame.size.height < _refreshComponent.calculatedFrame.origin.y) {
-        [_refreshComponent refresh];
+    if ([_refreshType isEqualToString:@"refreshForWholeVisible"]) {
+        if (_refreshComponent && scrollView.contentOffset.y < 0 && scrollView.contentOffset.y + _refreshComponent.calculatedFrame.size.height < _refreshComponent.calculatedFrame.origin.y) {
+            [_refreshComponent refresh];
+        }
     }
     
     //loading
@@ -662,6 +725,16 @@ WX_EXPORT_METHOD(@selector(resetLoadmore))
         _isScrolling = NO;
         [self performSelector:@selector(scrollViewDidEndDecelerating:) withObject:nil afterDelay:0.1];
     }
+}
+
+- (void)loadMoreIfNeed
+{
+    WXScrollerComponentView* scrollView = (WXScrollerComponentView *)self.view;
+    if (scrollView.isDragging || scrollView.isTracking || scrollView.isDecelerating) {
+        [self performSelector:@selector(loadMoreIfNeed) withObject:nil afterDelay:0.1];
+        return;
+    }
+    [_refreshComponent refresh];
 }
 
 - (void)handleAppear
